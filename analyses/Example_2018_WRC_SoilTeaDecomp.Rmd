@@ -1,0 +1,1094 @@
+---
+title: Distinct microbial communities alter litter decomposition rates in a fertilized coastal plain wetland
+author: "Megan E. Koceja, Regina Bledsoe, Carol Goodwillie, Ariane L. Peralta"
+date: "Last updated on `r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    df_print: paged
+  fig_caption: yes
+  pdf_document: null
+header-includes:
+- \usepackage{array}
+- \usepackage{graphics}
+- \usepackage[utf8]{inputenc}
+---
+
+Project Description: Fill out
+
+# Initial Setup
+```{r Initial Setup, include=FALSE}
+rm(list=ls())
+setwd("~/GitHub/WRC18_RhizoTeaDecomp/analyses")
+se <- function(x, ...){sd(x, na.rm = TRUE)/sqrt(length(na.omit(x)))}
+ci <- function(x, ...){1.96 * sd(x,na.rm = TRUE)}
+
+# Code Dependencies
+source("../bin/DiversityFunctions.R")
+source("../bin/MothurTools.R")
+require("vegan"); require("lme4"); require("reshape"); require("ggplot2")
+require("ade4"); require("png"); require ("agricolae"); require("tidyr")
+require("dplyr"); require("reshape2"); require("picante"); require("phyloseq")
+```
+#Import Files
+## Environmental Data
+```{r Import Files - Env, include=FALSE}
+# Import Environmental Data
+design <- read.csv("../data/2018_WRC_SoilMicroDecomp_missing3t.csv", row.names=1)
+```
+## Bacterial Data - including tea only
+```{r Import Files - Bacteria, include=FALSE}
+# Import OTU data
+# Import Raw Data
+otu.in <- read.otu("../data/WRC18_opti_mcc.shared")
+
+# Correct Sample IDs and Subset File
+missing <- setdiff(rownames(otu.in), rownames(design))
+otu <- otu.in[-(which(rownames(otu.in) %in% missing)), ]
+dim(otu)
+otu <- otu[match(rownames(design), rownames(otu)),]
+all.equal(rownames(otu), rownames(design))
+
+# OTU table - remove otus w/ < 2 occurrences across all sites
+otu_keep <- otu[, which(colSums(otu) >= 2)]
+dim(otu_keep)
+
+#otus <- otu[, which(colSums(otu) >= 2)]
+
+aa <- (rowSums(otu_keep))
+aa # WRC18_10_Tea-155 reads WRC18_13_Tea-29 reads - removed
+
+# OTU table - removed low abundance samples
+otu_low_remov <- otu_keep[which(rowSums(otu_keep) >= 1000), ]
+dim(otu_low_remov)
+
+# OTU table - odd sites in bacterial composition data and remove in design file
+odd.sites <- c("WRC18_10_Tea","WRC18_13_Tea")
+
+otu_final <- otu_low_remov[setdiff(rownames(otu_low_remov), odd.sites), ]
+design_final <- design[setdiff(rownames(design), odd.sites), ]
+all.equal(rownames(design_final), rownames(otu_final))
+
+otus <- otu_final
+
+###subset tea only
+
+otus.design <- cbind(design_final,otus)
+otus.design.teas <- subset(otus.design, source == "green_tea" | source == "rooibos_tea")
+dim(otus.design.teas)                   
+
+design.t <- otus.design.teas[,c(1:16)]
+otus.t <- otus.design.teas[,-c(1:16)]
+#full df - otus.design.teas
+
+# Make Relative Abundance Matrices
+dataREL.t <- otus.t
+for(i in 1:dim(otus.t)[1]){
+  dataREL.t[i,] <- otus.t[i,]/sum(otus.t[i,])
+}
+```
+# Simple Hypothesis Testing - Microbial Community (tea only)
+```{r perMANOVA - Bacteria - All Yrs, echo=TRUE}
+#PERMANOVA
+design.t$ditch <- as.factor(design.t$ditch)
+new.data.t <-cbind(design.t,dataREL.t)
+adonis = adonis(new.data.t[,-c(1:16)]~source*treatment*ditch, method = "bray", data = new.data.t, perm=1000, set.seed=42)
+adonis
+```
+# str-fxn tea type only
+```{r perMANOVA - Bacteria - All Yrs, echo=TRUE}
+# bcc = str(new.data.t)
+#Redundancy Analysis
+mod1 <- rda(dataREL.t ~ design.t$Percent_Loss)
+mod1
+plot(mod1)
+
+f <- dataREL.t ~ design.t$Percent_Loss
+df.rda <- dbrda(f, data=dataREL.t, distance="bray")
+anova(df.rda, by="terms", model="direct")
+RsquareAdj(df.rda)
+
+#new.data.t <-cbind(design.t,dataREL.t)
+
+library(dbstats)
+require(pls)
+library(pls)
+library(plsr)
+
+df <- vegdist(dataREL.t, method="bray")
+
+decomp.dbplsr <- dbplsr(new.data.t$Percent_Loss ~ as.matrix(df), data=new.data.t, ncomp=6, method="GCV")
+summary(decomp.dbplsr)
+```
+# Bacterial Ordinations
+
+## Principal Coordinates Ordination
+```{r Ordination (PCoA) - Bacteria - tea only, include=FALSE}
+# Principal Coordinates Analysis
+dataREL.dist <- vegdist(dataREL.t, method="bray")
+
+pcoa <- cmdscale(dataREL.dist, k=3, eig=TRUE, add=FALSE)
+  # Classical (Metric) Multidimensional Scaling; returns PCoA coordinates
+  # eig=TRUE returns eigenvalues; k = # of dimensions to calculate
+
+explainvar1b <- round(pcoa$eig[1] / sum(pcoa$eig), 3) * 100
+explainvar2b <- round(pcoa$eig[2] / sum(pcoa$eig), 3) * 100
+sum.eigb <- sum(explainvar1b, explainvar2b)
+
+explainvar1b #22.2
+explainvar2b #10.1
+```
+
+```{r Ordination (PCoA) - Bacteria, include=FALSE}
+# Principal Coordinates Analysis - teas only #NEED to incorporate ditch
+new.data.t <-cbind(design.t,dataREL.t)
+droplevels(new.data.t$source)
+pcoa.groups <- paste(new.data.t$treatment, new.data.t$source, new.data.t$ditch, sep = "_")
+pcoa.points <- data.frame(pcoa$points, group = pcoa.groups)
+
+# Calculate Centroids (mean and SE)
+pcoa.L.centroids <- melt(pcoa.points, id="group", measure.vars = c("X1", "X2"))
+pcoa.centroids <- acast(pcoa.L.centroids, variable ~ group, mean)
+pcoa.centroids.se <- acast(pcoa.L.centroids, variable ~ group, se)
+pcoa.centroids.sd <- acast(pcoa.L.centroids, variable ~ group, sd)
+
+# Combine
+pcoa.cent.dataframe <- cbind(t(pcoa.centroids), t(pcoa.centroids.se))
+colnames(pcoa.cent.dataframe) <- c("V1", "V2", "V1e", "V2e")
+pcoa.cent.treats <- rownames(pcoa.cent.dataframe)
+trt.t <- c("M","M","M","M","MF","MF","MF","MF")
+source.ditch.t <- c("green_tea (wet_0ditch)","green_tea (dry_1ditch)","rooibos_tea (wet_0ditch)","rooibos_tea (dry_1ditch)","green_tea (wet_0ditch)","green_tea (dry_1ditch)","rooibos_tea (wet_0ditch)","rooibos_tea (dry_1ditch)")
+pcoa.cent.dataframe.trts <- as.data.frame(pcoa.cent.dataframe)
+pcoa.cent.dataframe.trts$trt <- as.factor(trt.t)
+pcoa.cent.dataframe.trts$source <- as.factor(source.ditch.t)
+
+#pcoa.col <- as.factor(sapply(strsplit(pcoa.cent.treats, "_"), `[`, 2)) # group
+#pcoa.shape <- as.factor(sapply(strsplit(pcoa.cent.treats, "_"), `[`, 1)) # group
+
+#Plot
+df1a <- as.data.frame(pcoa.cent.dataframe.trts)
+plot1a <- ggplot(df1a, aes(x=V1, y=V2, colour=trt, shape = source,
+                           group = interaction(trt,source))) + theme_bw() 
+plot1a + theme(panel.grid.major = element_blank(), 
+               panel.grid.minor = element_blank(), 
+               axis.line = element_line(colour = "black")) + 
+theme(panel.background = element_blank()) + 
+geom_point(aes(colour=trt), size=5, stroke = 1.25, show.legend = TRUE) +
+geom_errorbarh(aes(xmax=V1+V1e, xmin=V1-V1e, height=0.01), colour="black") + geom_errorbar(aes(ymax=V2+V2e, ymin=V2-V2e, width=0.01), colour="black") +
+scale_colour_manual(labels = c("unfertilized","fertilized"), 
+                    values = c("gray70", "darkgreen")) + 
+scale_shape_manual(labels = c("green_tea (dry_1ditch)", 
+                              "green_tea (wet_0ditch)", 
+                              "rooibos_tea (dry_1ditch)",
+                              "rooibos_tea (wet_0ditch)"), 
+                   values = c(21,16,24,17)) +
+theme(axis.title = element_text(size=14), axis.text = element_text(size=14),
+      axis.text.x = element_text(size=14), 
+      panel.border = element_rect(colour = "black", size = 1.25)) + 
+theme(axis.ticks.length = unit(0.3, "cm")) + 
+xlab("PCoA 1 (22.2%)") + ylab("PCoA 2 (10.1%)") +
+  labs(colour = "Treatment", shape = "Source + Ditch") +
+  guides(colour = guide_legend(override.aes = list(pch=16, size = 4)),
+         shape = guide_legend(override.aes = list(size = 4)))
+ggsave("../figures/figs_2018_WRC_SoilTeaDecomp/Ordination_tea.jpg", plot=last_plot(), device=NULL, path=NULL, scale=1, width=7, height=5, dpi=300, limitsize=TRUE)
+```
+
+#Loading data file
+```{r Loading Files, include=FALSE}
+# load data file for TBI
+TBI <- read.csv("../data/2018_WRC_TBI_Rstats.csv", row.names=1) #removed sampleID#17
+dim(TBI)
+```
+
+# relationship between S and k
+```{r Loading Files, include=FALSE}
+TBI$Ditch_Trt <- as.factor(TBI$Ditch_Trt)
+TBI$ditch <- as.factor(TBI$Ditch)
+TBI$trt <- as.factor(TBI$Treatment)
+
+#different shapes
+p <- ggplot(TBI, aes(x=S, y=k, color=Ditch_Trt, shape=Ditch_Trt))+ 
+        scale_color_manual(name="Ditch + Treatment", 
+                           values=c("gray70","darkgreen","gray70","darkgreen"), 
+                            labels = c("wet_0ditch + unfertilized",
+                                      "wet_0ditch + fertilized",
+                                      "dry_1ditch + unfertilized",
+                                      "dry_1ditch + fertilized")) +
+  geom_point(size=5) + 
+        scale_shape_manual(name="Ditch + Treatment", values = c(18,16,23,21), 
+                           labels = c("wet_0ditch + unfertilized",
+                                      "wet_0ditch + fertilized",
+                                      "dry_1ditch + unfertilized",
+                                      "dry_1ditch + fertilized"))
+p1=p+geom_point()
+TBI <- p1 + theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) +theme(axis.title=element_text(vjust=1,size=18), axis.text=element_text(size=18), axis.text.x = element_text(vjust=0.65, hjust=0.5, size=18), panel.border = element_rect(colour = "black",size=1)) + theme(axis.ticks.length=unit(0.3,"cm")) + labs(x = "Stabilization factor (S)", y = "Decomposition rate (per day) (k)") + theme(strip.text.x = element_text(size=18, face="bold"), strip.text.y = element_text(size=18, face="bold"), strip.background = element_rect(colour="black", fill="white", size=1))
+TBI
+
+ggsave("../figures/figs_2018_WRC_SoilTeaDecomp/TBI.jpg", plot=last_plot(), device=NULL, path=NULL, scale=1, width=7, height=5, dpi=300, limitsize=TRUE)
+
+#same shape
+p <- ggplot(TBI, aes(x=S, y=k, color=trt, shape=ditch))+ scale_color_manual(name="Treatment", values=c("gray70","darkgreen"), labels = c("unfertilized", "fertilized")) + geom_point(size=5) + scale_shape_manual(name="Ditch", values = c(16,21), labels = c("wet_0ditch","dry_1ditch"))
+p1=p+geom_point()
+TBI <- p1 + theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) +theme(axis.title=element_text(vjust=1,size=18), axis.text=element_text(size=18), axis.text.x = element_text(vjust=0.65, hjust=0.5, size=18), panel.border = element_rect(colour = "black",size=1)) + theme(axis.ticks.length=unit(0.3,"cm")) + labs(x = "Stabilization factor (S)", y = "Decomposition rate (per day) (k)") + theme(strip.text.x = element_text(size=18, face="bold"), strip.text.y = element_text(size=18, face="bold"), strip.background = element_rect(colour="black", fill="white", size=1))
+TBI
+```
+
+# Tea Decomp Biomass
+```{r Loading Files, include=FALSE}
+library("lmerTest")
+library("pbkrtest")
+
+#subset tea only rows
+tea <- subset(design, source != "bulk_soil")
+tea$ditch <- as.factor(tea$ditch)
+str(tea)
+
+mass_loss.lm <- lmer(Percent_Loss ~ source*treatment*ditch + (1|block), tea)
+plot(mass_loss.lm)
+mass_loss.lm
+anova(mass_loss.lm, type="II", ddf="Kenward-Roger")
+
+#summary table for mass loss
+summary <- tea %>% group_by(source, treatment, ditch) %>% summarise(mean.biomass=mean(Percent_Loss), se.biomass=se(Percent_Loss))
+print(summary)
+write.csv(summary,"../data/massloss.summary.csv")
+
+#aov.fit2 <- aov(Percent_Loss~treatment*source*ditch, tea)
+#summary(aov.fit2)
+
+#posthoc2 <- TukeyHSD(x=aov.fit2, conf.level=0.95)
+#posthoc2
+
+# Graphing Percent Loss 
+ditch.labs <- c("wet plots farther from ditch","dry plots adjacent to ditch") #for facet labels
+names(ditch.labs) <- c("0", "1")
+
+p <- ggplot(tea, aes(x=source, y=Percent_Loss, color=as.factor(treatment)))+ scale_color_manual(name="Treatment", values=c("gray70", "darkgreen"), labels = c("unfertilized", "fertilized")) + stat_summary(fun.data=mean_cl_boot,size=0.75) 
+p1=p+geom_smooth(method="lm")+facet_wrap(~ditch)+facet_grid(. ~ ditch,labeller = labeller(ditch=ditch.labs))
+p1 + theme_bw() + 
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line 
+          =element_line(colour = "black")) + 
+    theme(axis.title=element_text(vjust=1,size=14,face="bold"),
+          axis.text=element_text(size=14), axis.text.x = element_text(vjust=0.65, hjust=0.5, 
+          size=14), panel.border = element_rect(colour = "black",size=1)) + 
+    theme(axis.ticks.length=unit(0.3,"cm")) + labs(x = "Source", y = "Percent Loss") + 
+    theme(strip.text.x = element_text(size=14, face="bold"), strip.text.y =   
+          element_text(size=14, face="bold"), strip.background = element_rect(colour="black",
+          fill="white", size=1)) +
+    scale_x_discrete(breaks=c("green_tea", "rooibos_tea"), labels=c("green tea", "rooibos tea"))
+ggsave("../figures/figs_2018_WRC_SoilTeaDecomp/PercentLoss_pointCI.png", plot=last_plot(), device=NULL, path=NULL, scale=1, width=7, height=5, dpi=300, limitsize=TRUE)
+
+#boxplots
+p <- ggplot(tea, aes(x=source, y=Percent_Loss, color=as.factor(treatment))) + geom_boxplot() +
+      geom_point(aes(color=factor(treatment)), size=2, position = position_jitterdodge()) +   
+      scale_color_manual(name="Treatment", values=c("gray70", "darkgreen"), labels = c("unfertilized", 
+      "fertilized")) +
+    labs(tag = "Source: P<0.001\nTreatment: P<0.001\nSource*Trt: P=0.045") 
+p1=p+geom_smooth(method="lm")+facet_wrap(~ditch)+facet_grid(. ~ ditch,labeller = labeller(ditch=ditch.labs))
+p1 + theme_bw() + 
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line 
+          =element_line(colour = "black")) + 
+    theme(axis.title=element_text(vjust=1,size=14,face="bold"),
+          axis.text=element_text(size=14), axis.text.x = element_text(vjust=0.65, hjust=0.5, 
+          size=14), panel.border = element_rect(colour = "black",size=1)) + 
+    theme(axis.ticks.length=unit(0.3,"cm")) + labs(x = "Source", y = "Percent Loss") + 
+    theme(strip.text.x = element_text(size=13, face="bold"), strip.text.y =   
+          element_text(size=12, face="bold"), strip.background = element_rect(colour="black",
+          fill="white", size=1)) +
+    scale_x_discrete(breaks=c("green_tea", "rooibos_tea"), labels=c("green tea", "rooibos tea"))+
+     theme(plot.tag.position = c(1.01, .85)) + theme(plot.tag=element_text(hjust=1,size=10))
+
+ggsave("../figures/figs_2018_WRC_SoilTeaDecomp/PercentLoss_boxplots.jpg", plot=last_plot(), device=NULL, path=NULL, scale=1, width=7, height=5, dpi=300, limitsize=TRUE)
+```
+
+## Bacterial Data - including bulk and tea
+```{r Import Files - Bacteria, include=FALSE}
+# Important Environmental data
+design <- read.csv("../data/2018_WRC_SoilMicroDecomp_missing3t.csv", row.names=1)
+
+# Import OTU data
+# Import Raw Data
+otu.in <- read.otu("../data/WRC18_opti_mcc.shared")
+
+# Correct Sample IDs and Subset File
+missing <- setdiff(rownames(otu.in), rownames(design))
+otu <- otu.in[-(which(rownames(otu.in) %in% missing)), ]
+dim(otu)
+otu <- otu[match(rownames(design), rownames(otu)),]
+all.equal(rownames(otu), rownames(design))
+
+# OTU table - remove otus w/ < 2 occurrences across all sites
+otu_removal <- otu[, which(colSums(otu) >= 2)]
+dim(otu_removal)
+
+aa <- (rowSums(otu_removal))
+aa # WRC18_10_Tea-155 reads WRC18_13_Tea-29 reads - removed
+
+# OTU table - removed low abundance samples
+otu_low_remov <- otu_removal[which(rowSums(otu_removal) >= 1000), ]
+dim(otu_low_remov)
+
+# OTU table - odd sites in bacterial composition data and remove in design file
+odd.sites <- c("WRC18_10_Tea","WRC18_13_Tea")
+
+otu_final <- otu_low_remov[setdiff(rownames(otu_low_remov), odd.sites), ]
+design_final <- design[setdiff(rownames(design), odd.sites), ]
+all.equal(rownames(design_final), rownames(otu_final))
+
+otus <- otu_final
+
+# Make Presence Absence Matrix
+dataPA <- (otus > 0) * 1
+
+# Make Relative Abundance Matrices
+dataREL <- otus
+for(i in 1:dim(otus)[1]){
+  dataREL[i,] <- otus[i,]/sum(otus[i,])
+}
+
+# Import Taxonomy File
+otu.tax <- read.tax(taxonomy = "../data/WRC18_opti_mcc.0.03.cons.taxonomy",
+                   format = "rdp", tax.levels = 6, col.tax = 3)
+```
+# Diversity Metrics - Hypothesis Testing
+```{r Diversity Metrics - Bacteria, echo=TRUE}
+# Rarefy Abundances (min abundance is 29485. We are sampling to 29000)
+min(rowSums(otus))
+otus.r <- rrarefy(otus, 29000)
+
+# Fisher's Alpha
+fisher <- fisher.alpha(otus.r)
+
+# Species Richness
+#richness <- rowSums((PWESdata.r >= 1))
+richness <- rowSums((otus >= 1))
+
+# Shannon Diversity
+shannon <- diversity(otus.r, "shannon")
+
+# Simpson's Evenness
+simp.even <- apply(otus.r, 1, simp_even)
+
+#Pielou’s evenness
+J <- shannon/log(specnumber(otus.r[,-c(1:1)]))
+
+#combined richness, diversity, evenness
+diversity <- cbind(design_final,richness,shannon,simp.even,J)
+write.csv(diversity,"../data/diversity.bact.raw.csv")
+```
+
+# Diversity Metrics - Hypothesis Testing
+```{r Hypothesis Testing - Bacteria, echo=TRUE}
+#summary table for bacterial diversity
+print(summary)
+write.csv(summary,"../data/diversity.bact.summary.csv")
+
+#summary table for soils
+summary <- diversity %>% group_by(source, treatment, ditch) %>% summarise(mean.soilC=mean(c_percent), se.soilC=se(c_percent), mean.soilN=mean(n_percent), se.soilN=se(n_percent),mean.soilCN=mean(C_N), se.soilCN=se(C_N),mean.ammonium=mean(n_nh4_ug_gsoil), se.ammonium=se(n_nh4_ug_gsoil),mean.nitrate=mean(n_no3_ug_gsoil), se.nitrate=se(n_no3_ug_gsoil),mean.phosphate=mean(p_po4_w_ug_gsoil), se.phosphate=se(p_po4_w_ug_gsoil))
+print(summary)
+write.csv(summary,"../data/diversity.soil.summary.csv")
+
+library(lmerTest)
+diversity$ditch <- as.factor(diversity$ditch)
+str(diversity)
+
+richness.lm <- lmer(richness ~ source*treatment*ditch + (1|block), data = diversity)
+plot(richness.lm)
+richness.lm
+anova(richness.lm, type="II", ddf="Kenward-Roger")
+
+evenness.lm <- lmer(simp.even ~ source*treatment*ditch + (1|block), data = diversity)
+plot(evenness.lm)
+evenness.lm
+anova(evenness.lm, type="II", ddf="Kenward-Roger")
+
+shannon.lm <- lmer(shannon ~ source*treatment*ditch + (1|block), data = diversity)
+plot(shannon.lm)
+shannon.lm
+anova(shannon.lm, type="II", ddf="Kenward-Roger")
+
+#regression alpha diversity
+# Multiple Linear Regression Example 
+diversity.teas <- subset(diversity, source == "green_tea" | source == "rooibos_tea")
+
+fit <- lm(Percent_Loss ~ richness + shannon + simp.even, diversity.teas)
+summary(fit) #
+plot(fit)
+
+```
+
+#Plot shannon diversity 
+```{r Plot - Shannon Diversity, echo=TRUE}
+ditch.labs <- c("wet plots farther from ditch", "dry plots adjacent to ditch") #for facet labels
+names(ditch.labs) <- c("0", "1")
+
+# Graphing Shannon Diversity
+p <- ggplot(diversity, aes(x=source, y=shannon, color=as.factor(treatment)))+ geom_boxplot() +
+      geom_point(aes(color=factor(treatment)), size=2, position = position_jitterdodge()) + scale_color_manual(name="Treatment", values=c("gray70", "darkgreen"), labels = c("unfertilized", "fertilized")) + labs(tag = "Source: P<0.0001\nTreatment: P<0.0001\nDitch: NS") 
+p1=p+geom_smooth(method="lm")+facet_wrap(~ditch)+facet_grid(. ~ ditch,labeller = labeller(ditch=ditch.labs))
+shannon<-p1 + theme_bw() + 
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line 
+          =element_line(colour = "black")) + 
+    theme(axis.title=element_text(vjust=1,size=14,face="bold"),
+          axis.text=element_text(size=14), axis.text.x = element_text(vjust=0.65, hjust=0.5, 
+          size=14), panel.border = element_rect(colour = "black",size=1)) + 
+    theme(axis.ticks.length=unit(0.3,"cm")) + labs(x = "", y = "Shannon Diversity Index (H')") + 
+    theme(strip.text.x = element_text(size=14, face="bold"), strip.text.y =   
+          element_text(size=14, face="bold"), strip.background = element_rect(colour="black",
+          fill="white", size=1)) +
+    scale_x_discrete(breaks=c("bulk_soil", "green_tea", "rooibos_tea"), labels=c("soil", "green", 
+          "rooibos")) + 
+    scale_y_continuous(limits =c(3.8,7.00),labels = scales::number_format(accuracy = 0.01)) +
+     theme(plot.tag.position = c(.99, .88)) + theme(plot.tag=element_text(hjust=1,size=10))
+
+shannon
+#ggsave("../figures/figs_2018_WRC_SoilTeaDecomp/shannon.png", plot=last_plot(), device=NULL, path=NULL, scale=1, width=7, height=5, dpi=300, limitsize=TRUE)
+```
+#Plot richness 
+```{r Plot - OTU richness, echo=TRUE}
+# Graphing Richness
+p <- ggplot(diversity, aes(x=source, y=richness, color=as.factor(treatment)))+ geom_boxplot() +
+      geom_point(aes(color=factor(treatment)), size=2, position = position_jitterdodge()) + scale_color_manual(name="Treatment", values=c("gray70", "darkgreen"), labels = c("unfertilized", "fertilized")) + labs(tag = "Source: P<0.0001\nTreatment: P=0.009\nDitch: NS") 
+p1=p+geom_smooth(method="lm")+facet_wrap(~ditch)+facet_grid(. ~ ditch,labeller = labeller(ditch=ditch.labs))
+richness<-p1 + theme_bw() + 
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line 
+          =element_line(colour = "black")) + 
+    theme(axis.title=element_text(vjust=1,size=14,face="bold"),
+          axis.text=element_text(size=14), axis.text.x = element_text(vjust=0.65, hjust=0.5, 
+          size=14), panel.border = element_rect(colour = "black",size=1)) + 
+    theme(axis.ticks.length=unit(0.3,"cm")) + labs(x = "", y = "OTU Richness") + 
+    theme(strip.text.x = element_text(size=14, face="bold"), strip.text.y =   
+          element_text(size=14, face="bold"), strip.background = element_rect(colour="black",
+          fill="white", size=1)) +
+    scale_x_discrete(breaks=c("bulk_soil", "green_tea", "rooibos_tea"), labels=c("soil", "green", 
+          "rooibos"))+
+     theme(plot.tag.position = c(0.99, .77)) + theme(plot.tag=element_text(hjust=1,size=10))
+richness
+#ggsave("../figures/figs_2018_WRC_SoilTeaDecomp/richness.png", plot=last_plot(), device=NULL, path=NULL, scale=1, width=7, height=5, dpi=300, limitsize=TRUE)
+```
+
+#Plot Simpson's Evenness
+```{r Plot Simpsons Evenness, echo=TRUE}
+# Graphing Simpson's Evenness
+p <- ggplot(diversity, aes(x=source, y=simp.even, color=as.factor(treatment)))+ geom_boxplot() +
+      geom_point(aes(color=factor(treatment)), size=2, position = position_jitterdodge()) + scale_color_manual(name="Treatment", values=c("gray70", "darkgreen"), labels = c("unfertilized", "fertilized")) + labs(tag = "Source: P=0.035\nTreatment: P=0.005\nDitch: NS") 
+p1=p+geom_smooth(method="lm")+facet_wrap(~ditch)+facet_grid(. ~ ditch,labeller = labeller(ditch=ditch.labs))
+even<-p1 + theme_bw() + 
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line 
+          =element_line(colour = "black")) + 
+    theme(axis.title=element_text(vjust=1,size=14,face="bold"),
+          axis.text=element_text(size=14), axis.text.x = element_text(vjust=0.65, hjust=0.5, 
+          size=14), panel.border = element_rect(colour = "black",size=1)) + 
+    theme(axis.ticks.length=unit(0.3,"cm")) + labs(x = "Source", y = "Simpson's Evenness") + 
+    theme(strip.text.x = element_text(size=14, face="bold"), strip.text.y =   
+          element_text(size=14, face="bold"), strip.background = element_rect(colour="black",
+          fill="white", size=1)) +
+    scale_x_discrete(breaks=c("bulk_soil", "green_tea", "rooibos_tea"), labels=c("soil", "green", 
+          "rooibos")) + 
+    scale_y_continuous(limits =c(0.00,0.12),labels = scales::number_format(accuracy = 0.01)) +
+     theme(plot.tag.position = c(.99, .88)) + theme(plot.tag=element_text(hjust=1,size=10))
+even 
+#ggsave("../figures/figs_2018_WRC_SoilTeaDecomp/evenness.png", plot=last_plot(), device=NULL, path=NULL, scale=1, width=7, height=5, dpi=300, limitsize=TRUE)
+```
+#combine alpha diversity graphs
+```{r Loading Files, include=FALSE}
+library("cowplot") #combining plots
+library("ggpubr")
+# remove legends and axes
+n1 <-richness + theme(legend.position="top", legend.box = "horizontal")
+n2 <- shannon + theme(legend.position="none")
+n3 <- even + theme(legend.position="none")
+
+# align all plots vertically
+plots <- align_plots(n1,n2,n3, align = 'v', axis = 'l')
+
+# combine moisture N process graphs
+n4 <- plot_grid(plots[[1]],plots[[2]],plots[[3]], labels = c("A","B","C"), label_size = 16, ncol=1, align='v')
+n4 
+
+ggsave("../figures/figs_2018_WRC_SoilTeaDecomp/alpha_diversity.jpg", plot=last_plot(), device=NULL, path=NULL, scale=1,  width=8, height=15, dpi=300, limitsize=TRUE)
+```
+# Simple Hypothesis Testing - Microbes
+```{r perMANOVA - Bacteria - All sources, echo=TRUE}
+#PERMANOVA
+new.data <-cbind(design_final,dataREL)
+adonis = adonis(new.data[,-c(1:16)]~source*treatment*ditch, method = "bray", data = new.data, perm=1000, set.seed=42)
+adonis
+```
+# Bacterial Ordinations
+```{r Ordination (PCoA) - Bacteria - bulk and teas, include=FALSE}
+# Principal Coordinates Analysis
+dataREL.dist <- vegdist(dataREL, method="bray")
+
+pcoa <- cmdscale(dataREL.dist, k=3, eig=TRUE, add=FALSE)
+  # Classical (Metric) Multidimensional Scaling; returns PCoA coordinates
+  # eig=TRUE returns eigenvalues; k = # of dimensions to calculate
+
+explainvar1b <- round(pcoa$eig[1] / sum(pcoa$eig), 3) * 100
+explainvar2b <- round(pcoa$eig[2] / sum(pcoa$eig), 3) * 100
+sum.eigb <- sum(explainvar1b, explainvar2b)
+
+explainvar1b #43.3
+explainvar2b #10.6
+```
+
+```{r Ordination (PCoA) - Bacteria, include=FALSE}
+# Principal Coordinates Analysis - bulk and teas
+new.data <-cbind(design_final,dataREL)
+pcoa.groups <- paste(new.data$treatment, new.data$source, new.data$ditch, sep = "_")
+pcoa.points <- data.frame(pcoa$points, group = pcoa.groups)
+
+# Calculate Centroids (mean and SE)
+pcoa.L.centroids <- melt(pcoa.points, id="group", measure.vars = c("X1", "X2"))
+pcoa.centroids <- acast(pcoa.L.centroids, variable ~ group, mean)
+pcoa.centroids.se <- acast(pcoa.L.centroids, variable ~ group, se)
+pcoa.centroids.sd <- acast(pcoa.L.centroids, variable ~ group, sd)
+
+# Combine
+pcoa.cent.dataframe <- cbind(t(pcoa.centroids), t(pcoa.centroids.se))
+colnames(pcoa.cent.dataframe) <- c("V1", "V2", "V1e", "V2e")
+pcoa.cent.treats <- rownames(pcoa.cent.dataframe)
+trt.t.s <- c("M","M","M","M","M","M","MF","MF","MF","MF","MF","MF")
+source.ditch.t.s <- c("bulk_soil (wet_0ditch)","bulk_soil (dry_1ditch)","green_tea (wet_0ditch)","green_tea (dry_1ditch)","rooibos_tea (wet_0ditch)","rooibos_tea (dry_1ditch)","bulk_soil (wet_0ditch)","bulk_soil (dry_1ditch)","green_tea (wet_0ditch)","green_tea (dry_1ditch)","rooibos_tea (wet_0ditch)","rooibos_tea (dry_1ditch)")
+pcoa.cent.dataframe.trts <- as.data.frame(pcoa.cent.dataframe)
+pcoa.cent.dataframe.trts$trt <- as.factor(trt.t.s)
+pcoa.cent.dataframe.trts$source <- as.factor(source.ditch.t.s)
+
+#Plot
+df2a <- as.data.frame(pcoa.cent.dataframe.trts)
+plot2a <- ggplot(df2a, aes(x=V1, y=V2, colour=trt, shape = source,
+                           group = interaction(trt, source))) + theme_bw() 
+plot2a + theme(panel.grid.major = element_blank(), 
+               panel.grid.minor = element_blank(), 
+               axis.line = element_line(colour = "black")) + 
+theme(panel.background = element_blank()) + 
+geom_point(aes(colour=trt.t.s), size=5, stroke = 1.25, show.legend = TRUE) +
+geom_errorbarh(aes(xmax=V1+V1e, xmin=V1-V1e, height=0.01), colour="black") + geom_errorbar(aes(ymax=V2+V2e, ymin=V2-V2e, width=0.01), colour="black") +
+scale_colour_manual(labels = c("unfertilized","fertilized"), 
+                    values = c("gray70", "darkgreen")) + 
+scale_shape_manual(labels = c("bulk_soil (dry_1ditch)", 
+                              "bulk_soil (wet_0ditch)",
+                              "green_tea (dry_1ditch)", 
+                              "green_tea (wet_0ditch)", 
+                              "rooibos_tea (dry_1ditch)",
+                              "rooibos_tea (wet_0ditch)"), 
+                   values = c(22,15,21,16,24,17)) +
+theme(axis.title = element_text(size=14), axis.text = element_text(size=14),
+      axis.text.x = element_text(size=14), 
+      panel.border = element_rect(colour = "black", size = 1.25)) + 
+theme(axis.ticks.length = unit(0.3, "cm")) + 
+xlab("PCoA 1 (43.3%)") + ylab("PCoA 2 (10.6%)") +
+  labs(colour = "Treatment", shape = "Source + Ditch") +
+  guides(colour = guide_legend(override.aes = list(pch=16, size = 4)),
+         shape = guide_legend(override.aes = list(size = 4)))
+ggsave("../figures/figs_2018_WRC_SoilTeaDecomp/Ordination_bulk_tea.jpg", plot=last_plot(), device=NULL, path=NULL, scale=1, width=7, height=5, dpi=300, limitsize=TRUE)
+```
+
+# Bacterial community indicator species
+```{r Bacteria Indicator Species, include=FALSE}
+#new.data <-cbind(design_final,dataREL) - includes bulk and tea sources
+library("labdsv")
+group = interaction(new.data$source, new.data$treatment, new.data$ditch)
+design.type <- group #treatment x fertilization x ditch
+dataREL.t <- new.data[,-c(1:16)]
+
+dataREL <- dataREL.t[, colSums(dataREL.t) > 0.05]
+bac.ind <- indval(dataREL, design.type)
+levels(design.type)
+summary(bac.ind)
+
+inds <- which(bac.ind$pval <= 0.05)
+bac.indicators <- as.data.frame(matrix(NA, nrow = length(inds), ncol = 4))
+colnames(bac.indicators) <- c("OTU", "Cluster", "IndVal", "Prob")
+
+bac.indicators$OTU <- names(inds)
+bac.indicators$Cluster <- bac.ind$maxcls[inds]
+bac.indicators$IndVal <- bac.ind$indcls[inds]
+bac.indicators$Prob <- bac.ind$pval[inds]
+
+ind.tax <- otu.tax[which(as.character(otu.tax$OTU) %in% bac.indicators$OTU), ]
+ind.tax <- ind.tax[match(ind.tax$OTU, bac.indicators$OTU), ]
+
+indicator.bac <- cbind(bac.indicators, ind.tax[, -c(1)])
+
+indicator.bac <- indicator.bac[order(as.numeric(indicator.bac$Cluster)), ]
+
+table(indicator.bac$Cluster)
+table(indicator.bac$Phylum)
+table(indicator.bac$Cluster)
+levels(design.type)
+
+# Export Bacteria Indicator Table
+write.table(indicator.bac, "../data/BacterialIndicators_source.txt",
+            sep="\t", row.names = F, quote = F)
+```
+
+```{r load taxonomy data into phyloseq object}
+# Import otu and tax into phyloseq
+otu <- otu_table(t(otus), taxa_are_rows = T)
+taxfile="../data/WRC18_opti_mcc.0.03.cons.taxonomy"
+tax <- import_mothur(mothur_constaxonomy_file =  taxfile)
+#rownames(meta) <- meta$group
+sample <- sample_data(design_final)
+#import into phyloseq
+phy<-phyloseq(otu,tax)
+row.names(sample)=sample_names(phy)
+#sample_names(sample)
+#sample_names(phy)
+#Assign rownames to be Sample ID's
+# Merge mothurdata object with sample metadata
+meta_merge <- merge_phyloseq(phy,sample)
+#assign column names
+colnames(tax_table(meta_merge))
+colnames(tax_table(meta_merge)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus")
+colnames(tax_table(meta_merge))
+rank_names(meta_merge)
+```
+
+```{r phyloseq Phylum stacked graph of taxa composition}
+
+# melt to long format (for ggploting) 
+# prune out phyla below 2% in each sample
+wrc_phylum <- meta_merge %>%
+  tax_glom(taxrank = "Phylum") %>%                     # agglomerate at phylum level
+  transform_sample_counts(function(x) {x/sum(x)} ) %>% # Transform to rel. abundance
+  psmelt() %>%                                         # Melt to long format
+  filter(Abundance > 0.01, source!="bulk_soil") %>%                        # Filter out low abundance taxa
+  arrange(Phylum)                                      # Sort data frame alphabetically by phylum
+
+# Set colors for plotting
+phylum_colors <- c("darkgreen", "darkred","blue", "orange")
+levels(wrc_phylum$source) <- c("Bulk soil", "Green Tea", "Rooibos Tea")
+labels <- c("0" = "Wet", "1" = "Dry")
+
+i <- with(wrc_phylum, interaction(source, ditch))
+
+levels(i) <- c("Bulk soil - Wet", "Green tea - Wet", "Rooibos tea - Wet", "Bulk soil - Dry", "Green tea - Dry", "Rooibos tea - Dry")
+
+# Plot 
+wrc_plot<- ggplot(wrc_phylum, aes(x = Phylum, y = Abundance, fill = i)) + 
+  facet_wrap(~treatment) +
+  geom_bar(stat = "summary", fun.y = "mean") +
+  scale_fill_manual(values = phylum_colors) +
+  # Remove x axis title
+  theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  xlab ("Phylum") +
+  ylab("Relative Abundance > 1.0% \n") +
+  ggtitle("Phylum Composition of Bacterial Communities")
+
+wrc_plot + coord_flip()
+
+p <- aov(Abundance ~ source*treatment*ditch + (1|block), wrc_phylum)
+plot(p)
+anova(p)
+
+wrc_phylum_means <- wrc_phylum %>%
+  group_by(source, Phylum) %>%
+  summarise_at(c("Abundance"), mean, na.rm=TRUE)
+
+write.csv(wrc_phylum, file="../figures/figs_2018_WRC_SoilTeaDecomp/phylum_composition.csv", row.names=TRUE)
+
+ggsave(file="../figures/figs_2018_WRC_SoilTeaDecomp/phylum_stack.pdf", width=9, height=9, dpi=300)
+```
+
+```{r phyloseq Class stacked graphs of taxa composition}
+# melt to long format (for ggploting) 
+# prune out phyla below 2% in each sample
+wrc_class <- meta_merge %>%
+  tax_glom(taxrank = "Class") %>%                     # agglomerate at phylum level
+  transform_sample_counts(function(x) {x/sum(x)} ) %>% # Transform to rel. abundance
+  psmelt() %>%                                         # Melt to long format
+  filter(Abundance > 0.01, source!="bulk_soil") %>%    # Filter out low abundance taxa
+  arrange(Class)                                     # Sort data frame alphabetically by phylum
+
+# Set colors for plotting
+class_colors <- c("darkgreen", "darkred","blue", "orange")
+levels(wrc_class$source) <- c("Bulk soil", "Green Tea", "Rooibos Tea")
+labels <- c("0" = "Wet", "1" = "Dry")
+
+i <- with(wrc_class, interaction(source, ditch))
+
+levels(i) <- c("Bulk soil - Wet", "Green tea - Wet", "Rooibos tea - Wet", "Bulk soil - Dry", "Green tea - Dry", "Rooibos tea - Dry")
+
+# Plot 
+wrc_plot<- ggplot(wrc_class, aes(x = Class, y = Abundance, fill = i)) + 
+  facet_grid(.~treatment)+#, labeller=labeller(ditch=labels)) +
+  geom_bar(stat = "summary", fun.y = "mean") + 
+  scale_fill_manual(values = class_colors) +
+  theme_bw()  +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+ 
+  ylab("Class Relative Abundance > 1.0%") +
+  xlab("Treatment") +
+  labs(fill="Treatment") +
+  ggtitle("Class Composition of Bacterial Communities") 
+
+wrc_plot + coord_flip() 
+
+p <- aov(Abundance ~ source*treatment*ditch + (1|block), wrc_class)
+plot(p)
+anova(p)
+
+wrc_class_means <- wrc_class %>%
+  group_by(source, Class) %>%
+  summarise_at(c("Abundance"), mean, na.rm=TRUE)
+
+write.csv(wrc_class_means, file="../figures/figs_2018_WRC_SoilTeaDecomp/class_composition.csv", row.names=TRUE)
+
+ggsave(file="../figures/figs_2018_WRC_SoilTeaDecomp/class_stack.pdf", width=9, height=9, dpi=300)
+
+```
+
+```{r phyloseq Family - Alphaproteobacteria  stacked graphs of taxa composition}
+# melt to long format (for ggploting) 
+# prune out phyla below 1% in each sample
+wrc_family <- meta_merge %>%
+  tax_glom(taxrank = "Family") %>%                     # agglomerate at phylum level
+  transform_sample_counts(function(x) {x/sum(x)} ) %>% # Transform to rel. abundance
+  psmelt() %>%                                         # Melt to long format
+  filter(Abundance > 0.01, Class == "Alphaproteobacteria", source!="bulk_soil") %>%                      arrange(Family)                                     # Sort data frame alphabetically by phylum
+
+# wrc_family
+# Set colors for plotting
+family_colors <- c("darkgreen", "darkred","blue", "orange")
+levels(wrc_family$source) <- c("Bulk soil", "Green Tea", "Rooibos Tea")
+labels <- c("0" = "Wet", "1" = "Dry")
+
+i <- with(wrc_family, interaction(source, ditch))
+
+levels(i) <- c("Bulk soil - Wet", "Green tea - Wet", "Rooibos tea - Wet", "Bulk soil - Dry", "Green tea - Dry", "Rooibos tea - Dry")
+
+# Plot 
+wrc_plot<- ggplot(wrc_family, aes(x = Family, y = Abundance, fill = i)) + 
+  geom_bar(stat = "summary", fun.y = "mean") +
+  facet_wrap(~treatment)+
+  scale_fill_manual(values = family_colors) +
+  theme_bw()  +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+ 
+  theme(axis.title=element_text(vjust=1,size=14,face="bold"),
+          axis.text=element_text(size=14), axis.text.x = element_text(size=14))+
+  ylab("Relative Abundance > 1%") +
+  xlab("Family Name")+
+  labs(fill="Treatment") +
+  ggtitle("Alphaproteobacteria Composition of \n Bacterial Communities") 
+
+wrc_plot + coord_flip() 
+
+p <- aov(Abundance ~ source*treatment*ditch + (1|block), wrc_family)
+plot(p)
+anova(p)
+
+wrc_family_means <- wrc_family %>%
+  group_by(source, Family) %>%
+  summarise_at(c("Abundance"), mean, na.rm=TRUE)
+
+write.csv(wrc_family_means, file="../figures/figs_2018_WRC_SoilTeaDecomp/alpha_composition.csv", row.names=TRUE)
+
+ggsave(file="../figures/figs_2018_WRC_SoilTeaDecomp/alpha_family_stack.pdf", width=15, height=9, dpi=300)
+```
+
+```{r phyloseq Family - Deltaproteobacteria stacked graphs of taxa composition}
+# melt to long format (for ggploting) 
+# prune out phyla below 1% in each sample
+wrc_family <- meta_merge %>%
+  tax_glom(taxrank = "Family") %>%                     # agglomerate at phylum level
+  transform_sample_counts(function(x) {x/sum(x)} ) %>% # Transform to rel. abundance
+  psmelt() %>%                                         # Melt to long format
+  filter(Abundance > 0.01, Class == "Deltaproteobacteria", source!="bulk_soil") %>%                      arrange(Family)                                     # Sort data frame alphabetically by phylum
+
+# wrc_family
+# Set colors for plotting
+family_colors <- c("darkgreen", "darkred","blue", "orange")
+levels(wrc_family$source) <- c("Bulk soil", "Green Tea", "Rooibos Tea")
+labels <- c("0" = "Wet", "1" = "Dry")
+
+i <- with(wrc_family, interaction(source, ditch))
+
+levels(i) <- c("Bulk soil - Wet", "Green tea - Wet", "Rooibos tea - Wet", "Bulk soil - Dry", "Green tea - Dry", "Rooibos tea - Dry")
+
+# Plot 
+wrc_plot<- ggplot(wrc_family, aes(x = Family, y = Abundance, fill = i)) + 
+  geom_bar(stat = "summary", fun.y = "mean") +
+  facet_wrap(~treatment)+
+  scale_fill_manual(values = family_colors) +
+  theme_bw()  +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+ 
+  theme(axis.title=element_text(vjust=1,size=14,face="bold"),
+          axis.text=element_text(size=14), axis.text.x = element_text(size=14))+
+  ylab("Relative Abundance > 1%") +
+  xlab("Family Name")+
+  ggtitle("Deltaproteobacteria Composition of \n Bacterial Communities") 
+
+wrc_plot + coord_flip() 
+
+p <- aov(Abundance ~ source*treatment*ditch + (1|block), wrc_family)
+plot(p)
+anova(p)
+
+wrc_family_means <- wrc_family %>%
+  group_by(source, Family) %>%
+  summarise_at(c("Abundance"), mean, na.rm=TRUE)
+
+write.csv(wrc_family_means, file="../figures/figs_2018_WRC_SoilTeaDecomp/delta_composition.csv", row.names=TRUE)
+
+ggsave(file="../figures/figs_2018_WRC_SoilTeaDecomp/delta_family_stack.pdf", width=15, height=9, dpi=300)
+```
+
+```{r phyloseq Family - Gammaproteobacteria  stacked graphs of taxa composition}
+# prune out phyla below 1% in each sample
+wrc_family <- meta_merge %>%
+  tax_glom(taxrank = "Family") %>%                     # agglomerate at phylum level
+  transform_sample_counts(function(x) {x/sum(x)} ) %>% # Transform to rel. abundance
+  psmelt() %>%                                         # Melt to long format
+  filter(Abundance > 0.01, Class == "Gammaproteobacteria", source!="bulk_soil") %>%  # Filter out low abundance taxa
+  arrange(Family)                                     # Sort data frame alphabetically by phylum
+
+# Set colors for plotting
+family_colors <- c("darkgreen", "darkred","blue", "orange")
+levels(wrc_family$source) <- c("Bulk soil", "Green Tea", "Rooibos Tea")
+labels <- c("0" = "Wet", "1" = "Dry")
+
+i <- with(wrc_family, interaction(source, ditch))
+
+levels(i) <- c("Bulk soil - Wet", "Green tea - Wet", "Rooibos tea - Wet", "Bulk soil - Dry", "Green tea - Dry", "Rooibos tea - Dry")
+
+# Plot 
+wrc_plot<- ggplot(wrc_family, aes(x = Family, y = Abundance, fill = i)) + 
+  facet_grid(~treatment)+
+  geom_bar(stat = "summary", fun.y = "mean") +
+  scale_fill_manual(values = family_colors) +
+  theme_bw()  +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  theme(axis.title=element_text(vjust=1,size=14,face="bold"),
+          axis.text=element_text(size=14), axis.text.x = element_text(size=14))+
+  ylab("Relative Abundance > 1%") +
+  xlab("Family Name")+
+  ggtitle("Gammaproteobacteria Composition of \n Bacterial Communities") 
+
+wrc_plot + coord_flip() 
+
+write.csv(wrc_family, file="../figures/figs_2018_WRC_SoilTeaDecomp/gamma_composition.csv", row.names=TRUE)
+
+ggsave(file="../figures/figs_2018_WRC_SoilTeaDecomp/gamma_family_stack.pdf", width=15, height=9, dpi=300)
+```
+
+
+```{r phyloseq Family - Betaproteobacteria  stacked graphs of taxa composition}
+# prune out phyla below 1% in each sample
+wrc_family <- meta_merge %>%
+  tax_glom(taxrank = "Family") %>%                     # agglomerate at phylum level
+  transform_sample_counts(function(x) {x/sum(x)} ) %>% # Transform to rel. abundance
+  psmelt() %>%                                         # Melt to long format
+  filter(Abundance > 0.01, Class == "Betaproteobacteria", source!="bulk_soil") %>% # Filter out low abundance taxa
+  arrange(Family)                                     # Sort data frame alphabetically by phylum
+
+# Set colors for plotting
+family_colors <- c("darkgreen", "darkred","blue", "orange")
+levels(wrc_family$source) <- c("Bulk soil", "Green Tea", "Rooibos Tea")
+labels <- c("0" = "Wet", "1" = "Dry")
+
+i <- with(wrc_family, interaction(source, ditch))
+
+levels(i) <- c("Bulk soil - Wet", "Green tea - Wet", "Rooibos tea - Wet", "Bulk soil - Dry", "Green tea - Dry", "Rooibos tea - Dry")
+
+# Plot 
+wrc_plot<- ggplot(wrc_family, aes(x = Family, y = Abundance, fill = i)) + 
+  facet_grid(~treatment)+
+  geom_bar(stat = "summary", fun.y = "mean") +
+  scale_fill_manual(values = family_colors) +
+  theme_bw()  +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  theme(axis.title=element_text(vjust=1,size=14,face="bold"),
+          axis.text=element_text(size=14), axis.text.x = element_text(size=14))+
+  ylab("Relative Abundance > 1%") +
+  xlab("Family Name")+
+  ggtitle("Betaproteobacteria Composition of \n Bacterial Communities") 
+
+wrc_plot + coord_flip() 
+
+write.csv(wrc_family, file="../figures/figs_2018_WRC_SoilTeaDecomp/beta_composition.csv", row.names=TRUE)
+
+ggsave(file="../figures/figs_2018_WRC_SoilTeaDecomp/beta_family_stack.pdf", width=15, height=9, dpi=300)
+```
+
+```{r phyloseq Family - Actinobacteria  stacked graphs of taxa composition}
+# prune out phyla below 1% in each sample
+wrc_family <- meta_merge %>%
+  tax_glom(taxrank = "Family") %>%                     # agglomerate at phylum level
+  transform_sample_counts(function(x) {x/sum(x)} ) %>% # Transform to rel. abundance
+  psmelt() %>%                                         # Melt to long format
+  filter(Abundance > 0.01, Class == "Actinobacteria", source!="bulk_soil") %>% # Filter out low abundance taxa
+  arrange(Family)                                     # Sort data frame alphabetically by phylum
+
+# Set colors for plotting
+family_colors <- c("darkgreen", "darkred","blue", "orange")
+levels(wrc_family$source) <- c("Bulk soil", "Green Tea", "Rooibos Tea")
+labels <- c("0" = "Wet", "1" = "Dry")
+
+i <- with(wrc_family, interaction(source, ditch))
+
+levels(i) <- c("Bulk soil - Wet", "Green tea - Wet", "Rooibos tea - Wet", "Bulk soil - Dry", "Green tea - Dry", "Rooibos tea - Dry")
+
+# Plot 
+wrc_plot<- ggplot(wrc_family, aes(x = Family, y = Abundance, fill = i)) + 
+  facet_grid(~treatment)+
+  geom_bar(stat = "summary", fun.y = "mean") +
+  scale_fill_manual(values = family_colors) +
+  theme_bw()  +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  theme(axis.title=element_text(vjust=1,size=14,face="bold"),
+          axis.text=element_text(size=14), axis.text.x = element_text(size=14))+
+  ylab("Relative Abundance > 1%") +
+  xlab("Family Name")+
+  ggtitle("Actinobacteria Composition of \n Bacterial Communities") 
+
+wrc_plot + coord_flip() 
+
+write.csv(wrc_family, file="../figures/figs_2018_WRC_SoilTeaDecomp/actino_composition.csv", row.names=TRUE)
+
+ggsave(file="../figures/figs_2018_WRC_SoilTeaDecomp/actino_family_stack.pdf", width=15, height=9, dpi=300)
+```
+
+```{r phyloseq Family - Rhodospirillaceae genus stacked graphs of taxa composition}
+# prune out phyla below 1% in each sample
+wrc_family <- meta_merge %>%
+  tax_glom(taxrank = "Genus") %>%                     # agglomerate at phylum level
+  transform_sample_counts(function(x) {x/sum(x)} ) %>% # Transform to rel. abundance
+  psmelt() %>%                                         # Melt to long format
+  filter(Abundance > 0.01, Family == "Rhodospirillaceae", source!="bulk_soil") %>% # Filter out low abundance taxa
+  arrange(Genus)                                     # Sort data frame alphabetically by phylum
+
+# Set colors for plotting
+family_colors <- c("darkgreen", "darkred","blue", "orange")
+levels(wrc_family$source) <- c("Bulk soil", "Green Tea", "Rooibos Tea")
+labels <- c("0" = "Wet", "1" = "Dry")
+
+i <- with(wrc_family, interaction(source, ditch))
+
+levels(i) <- c("Bulk soil - Wet", "Green tea - Wet", "Rooibos tea - Wet", "Bulk soil - Dry", "Green tea - Dry", "Rooibos tea - Dry")
+
+# Plot 
+wrc_plot<- ggplot(wrc_family, aes(x = Genus, y = Abundance, fill = i)) + 
+  facet_grid(~treatment)+
+  geom_bar(stat = "summary", fun.y = "mean") +
+  scale_fill_manual(values = family_colors) +
+  theme_bw()  +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  theme(axis.title=element_text(vjust=1,size=14,face="bold"),
+          axis.text=element_text(size=14), axis.text.x = element_text(size=14))+
+  ylab("Relative Abundance > 1%") +
+  xlab("Genus Name")+
+  ggtitle("Rhodospirillaceae Composition of \n Bacterial Communities") 
+
+wrc_plot + coord_flip() 
+
+write.csv(wrc_family, file="../figures/figs_2018_WRC_SoilTeaDecomp/rhodo_composition.csv", row.names=TRUE)
+
+ggsave(file="../figures/figs_2018_WRC_SoilTeaDecomp/rhodo_family_stack.pdf", width=15, height=9, dpi=300)
+```
+
+```{r soil properties}
+#Read in design file
+meta.env <- design
+meta.env$ditch <- as.factor(meta.env$ditch)
+
+#bulk soils, M, MF
+by_treatment <- meta.env %>%
+  filter(source == "bulk_soil") %>%
+  group_by(treatment) %>%
+  summarise_at(c("temp_degC", "moisture", "pH", "c_percent", "n_percent", "C_N", 
+                 "n_nh4_ug_gsoil", "n_no3_ug_gsoil", "p_po4_hcl_ug_gsoil", 
+                 "p_po4_w_ug_gsoil"), funs(mean,sd), na.rm = TRUE)
+write.csv(t(by_treatment), file = "../data/soil_properties_trt.csv",row.names=TRUE)
+
+by_treatment_ditch <- meta.env %>%
+  filter(source == "bulk_soil") %>%
+  group_by(treatment, ditch) %>%
+  summarise_at(c("temp_degC", "moisture", "pH", "c_percent", "n_percent", "C_N", 
+                 "n_nh4_ug_gsoil", "n_no3_ug_gsoil", "p_po4_hcl_ug_gsoil", 
+                 "p_po4_w_ug_gsoil"), funs(mean,sd), na.rm = TRUE)
+write.csv(t(by_treatment_ditch), file = "../data/soil_properties_trt_ditch.csv",row.names=TRUE)
+
+library("lmerTest")
+library("pbkrtest")
+
+temp.lm <- lmer(temp_degC ~ treatment*ditch + (1|block), data = meta.env)
+plot(temp.lm)
+anova(temp.lm, type="II", ddf="Kenward-Roger")
+#confint(temp.lm)
+
+nh4.lm <- lmer(n_nh4_ug_gsoil ~ treatment*ditch + (1|block), data = meta.env)
+plot(nh4.lm)
+anova(nh4.lm, type="II", ddf="Kenward-Roger")
+#confint(nh4.lm)
+
+no3.lm <- lmer(n_no3_ug_gsoil ~ treatment*ditch + (1|block), data = meta.env)
+plot(no3.lm)
+anova(no3.lm, type="II", ddf="Kenward-Roger")
+#confint(no3.lm)
+
+pH.lm <- lmer(pH ~ treatment*ditch + (1|block), data = meta.env)
+plot(pH.lm)
+anova(pH.lm, type="II", ddf="Kenward-Roger")
+#confint(pH.lm)
+
+soilC.lm <- lmer(c_percent ~ treatment*ditch + (1|block), data = meta.env)
+plot(soilC.lm)
+anova(soilC.lm, type="II", ddf="Kenward-Roger")
+#confint(soilC.lm)
+
+soilN.lm <- lmer(n_percent ~ treatment*ditch + (1|block), data = meta.env)
+plot(soilN.lm)
+anova(soilN.lm, type="II", ddf="Kenward-Roger")
+#confint(soilN.lm)
+
+CN.lm <- lmer(C_N ~ treatment*ditch + (1|block), data = meta.env)
+plot(CN.lm)
+anova(CN.lm, type="II", ddf="Kenward-Roger")
+#confint(CN.lm)
+
+p_hcl.lm <- lmer(p_po4_hcl_ug_gsoil ~ treatment*ditch + (1|block), data = meta.env)
+plot(p_hcl.lm)
+anova(p_hcl.lm, type="II", ddf="Kenward-Roger")
+#confint(p_hcl.lm)
+
+p_h2o.lm <- lmer(p_po4_w_ug_gsoil ~ treatment*ditch + (1|block), data = meta.env)
+plot(p_h2o.lm)
+anova(p_h2o.lm, type="II", ddf="Kenward-Roger")
+#confint(p_h2o.lm)
+
+moisture.lm <- lmer(moisture ~ treatment*ditch + (1|block), data = meta.env)
+plot(moisture.lm)
+anova(moisture.lm, type="II", ddf="Kenward-Roger")
+#confint(moisture.lm)
+
+
+nh4 <- aov(meta.env$n_nh4_ug_gsoil ~ treatment, meta.env)
+anova(nh4)
+
+no3 <- aov(meta.env$n_no3_ug_gsoil ~ treatment, meta.env)
+anova(no3)
+
+ph <- aov(meta.env$pH ~ treatment, meta.env)
+anova(ph)
+
+temp_degC <- aov(meta.env$temp_degC ~ treatment, meta.env)
+anova(temp_degC)
+
+cpercent <- aov(meta.env$c_percent ~ treatment, meta.env)
+anova(cpercent)
+
+npercent <- aov(meta.env$n_percent ~ treatment, meta.env)
+anova(npercent)
+
+CN <- aov(meta.env$C_N ~ treatment, meta.env)
+anova(CN)
+
+p_hcl <- aov(meta.env$p_po4_hcl_ug_gsoil ~ treatment, meta.env)
+anova(p_hcl)
+
+p_h2o <- aov(meta.env$p_po4_w_ug_gsoil ~ treatment, meta.env)
+anova(p_h2o)
+
+moist <- aov(meta.env$moisture ~ treatment, meta.env)
+anova(moist)
+```
