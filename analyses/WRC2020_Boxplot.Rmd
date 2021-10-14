@@ -1,19 +1,17 @@
 ---
-title: "WRC2020"
+title: "WRC2020 Plant-Bacterial Biomass"
 author: "Daniya S. Stephens"
 output: html_notebook
+editor_options: 
+  chunk_output_type: inline
 ---
 
 This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
 
-Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*.
 
-Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
-
-When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
-
-The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
-
+knitr::opts_knit$set(root.dir = normalizePath("C:/Users/Owner/GitHub/WRC_PlantMicroBiomass/data)) 
+---
 *INSTALL PACKAGES*
 ```{r}
 install.packages("ggplot2")
@@ -22,50 +20,84 @@ library("ggplot2")
 library("tidyverse")
 ```
 
+*READ IN DATA FILE*
+```{r}
+WRC2020Biomass <- read.csv("C:/Users/Owner/GitHub/WRC_PlantMicroBiomass/data/WRC2020_02012021.csv")
+```
 *CREATE NEW DATA FRAME FOR BOXPLOT*
 ```{r}
-sub.wrc2020= select(WRC2020_02012021, "Sample.ID", "Fertilization", "Aboveground.Dry.weight..g.", "Below.Ground.Biomass","TOC_ADJ", "TOC_ADJ.1", "TKN_ADJ", "TKN_ADJ.1", "Ditch")
+sub.wrc2020= select(WRC2020Biomass, "Sample.ID", "Fertilization", "Aboveground.Dry.weight..g.", "Below.Ground.Biomass","TOC_ADJ", "TOC_ADJ.1", "TKN_ADJ", "TKN_ADJ.1", "Ditch", "MBC_FUM_TOC", "MBC_UNFUM_TOC", "MBN_FUM_TKN", "MBN_UNFUM_TKN")
 
-#ADJ is Fumigated, ADJ.1 is Unfumigated
+#ADJ is Fumigated, ADJ.1 is Unfumigated, MBC is Microbial Biomass Carbon, MBN is Microbial Biomass Nitrogen, TOC and TKN is Total Organic Carbon and Total Nitrogen
 ```
 
 *ADD A NEW COLUMN OF SAMPLE ID SO IT IS ALL NUMERICAL*
 ```{r}
 sampleid <- c(305:352)
 sub.wrc2020$new_col <- sampleid
-sub.wrc2020$Treatment <- c(WRC2020_02012021$Treatment) #Added the treament Column
+sub.wrc2020$Treatment <- c(WRC2020Biomass$Treatment) #Added the treament column
 sub.wrc2020=subset(sub.wrc2020, select= -c(Fertilization)) #Deleted the Fertilization Column
+sub.wrc2020$Ditch <- as.factor(sub.wrc2020$Ditch) #Converted ditch from number to factor
 ```
-
 *GRAPH BOXPLOT*
 ```{r}
-#TREATMENT~ABOVEGROUNDBIOMASS has a higher abundance of above-ground dry weight in the MF plots than M. Also much more variable
+colors <- c("M" = "gray70", "MF" = "darkgreen")
 
-ggplot(data=sub.wrc2020) +
-  aes(x=Treatment, y=Aboveground.Dry.weight..g.) +
-  geom_boxplot(fill="pink", col="black")+
-  geom_point()
+#Aboveground Dry weight (g)
+ggplot(sub.wrc2020, aes(x=Treatment, y=Aboveground.Dry.weight..g., color=as.factor(Treatment)))+ geom_boxplot()+
+geom_point(aes(color=factor(Treatment), shape=(Ditch)), size=2, position = position_jitterdodge())+ scale_color_manual(name="Treatment", values=c("gray70", "darkgreen"), labels = c("Mowed/Unfertilized", "Mowed/Fertilized"))+
+xlab("Treatment")+
+ylab("Aboveground dry weight (g)")+
+scale_shape_manual(labels = c("(0_wet)","(1_dry)"), values= c(16,17))+
+theme_bw() + 
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line 
+          =element_line(colour = "black")) + 
+    theme(axis.title=element_text(vjust=1,size=14,face="bold"),
+          axis.text=element_text(size=14), axis.text.x = element_text(vjust=0.65, hjust=0.5, 
+          size=14), panel.border = element_rect(colour = "black",size=1)) + 
+    theme(axis.ticks.length=unit(0.3,"cm"))+ 
+    theme(strip.text.x = element_text(size=14, face="bold"), strip.text.y =   
+          element_text(size=14, face="bold"), strip.background = element_rect(colour="black",
+          fill="white", size=1))
+
+#TREATMENT~ABOVEGROUNDBIOMASS shows more above-ground dry weight in the MF plots than M. Also much more variable. Wetter plots in fertilized conditions on avg has a more weight than drier plots. In the unfertilized plots, ditch effect seems to not be important (both dry and wet plots were similar in dry weight)
+
+#Belowground Biomass
+ggplot(sub.wrc2020, aes(x=Treatment, y=Below.Ground.Biomass, color=as.factor(Treatment)))+ geom_boxplot()+
+geom_point(aes(color=factor(Treatment), shape=(Ditch)), size=2, position = position_jitterdodge())+ scale_color_manual(name="Treatment", values=c("gray70", "darkgreen"), labels = c("Mowed/Unfertilized", "Mowed/Fertilized"))+
+xlab("Treatment")+
+ylab("Belowground Biomass")+
+scale_shape_manual(labels = c("(0_wet)","(1_dry)"), values= c(16,17))+
+theme_bw() + 
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line 
+          =element_line(colour = "black")) + 
+    theme(axis.title=element_text(vjust=1,size=14,face="bold"),
+          axis.text=element_text(size=14), axis.text.x = element_text(vjust=0.65, hjust=0.5, 
+          size=14), panel.border = element_rect(colour = "black",size=1)) + 
+    theme(axis.ticks.length=unit(0.3,"cm"))+ 
+    theme(strip.text.x = element_text(size=14, face="bold"), strip.text.y =   
+          element_text(size=14, face="bold"), strip.background = element_rect(colour="black",
+          fill="white", size=1))
 
 
-#TREATMENT~BELOWGROUNDBIOMASS is very similar b/n MF and M plots. Does not look like any significant differences in below ground biomass
-
-ggplot(sub.wrc2020, aes(Treatment, Below.Ground.Biomass))+
-       geom_boxplot(fill="green", col="black")+
-  geom_point()
+#TREATMENT~BELOWGROUNDBIOMASS shows more Belowground biomass in fertilized compared to unfertilized plots. The wetter plots also shows more biomass compared to drier plots.Ditch effect seems to be insignificant in the unfertilized plots (both dry and wet plots have similar belowground biomass)
 
 #RAW DATA 
-
+#TOC FUMIGATED
 boxplot(sub.wrc2020$TOC_ADJ~sub.wrc2020$Treatment, ylab="TOC FUMIGATED", xlab = "Treatment") 
-#TOC FUMIGATED no significant differences b/n MF and M plots. M plot is much more variable.
+#no significant differences b/n MF and M plots. M plot is more variable.
 
+#TOC UNFUMIGATED
 boxplot(sub.wrc2020$TOC_ADJ.1~sub.wrc2020$Treatment, ylab="TOC UNFUMIGATED", xlab = "Treatment") 
-#TOC UNFUMIGATED M plot is slightly higher than MF although MF is more variable.
+#M plot is slightly higher than MF although MF is more variable.
 
+#TKN FUMIGATED
 boxplot(sub.wrc2020$TKN_ADJ~sub.wrc2020$Treatment, ylab="TKN FUMIGATED", xlab = "Treatment") 
-#TKN FUMIGATED no significant differences although M is more variable
+#no significant differences although M is more variable
 
+#TKN UNFUMIGATED
 boxplot(sub.wrc2020$TKN_ADJ.1~sub.wrc2020$Treatment, ylab="TKN UNFUMIGATED", xlab = "Treatment")
-#TKN UNFUMIGATED no significant differences and the variability is roughly the same
+#no significant differences and the variability is roughly the same
 ```
 
 *ABOVRGROUND BIOMASS ~ TREATMENT ~ DITCH EFFECT*
@@ -88,36 +120,62 @@ ggplot(data=sub.wrc2020)+
 
 *CALCULATED TOTAL MBC AND MBN*
 ```{r}
-MBC.adj <- (WRC2020_02012021$TOC_ADJ-WRC2020_02012021$TOC_ADJ.1) #Created new column for microbial biomass carbon
+MBC.adj <- (WRC2020Biomass$TOC_ADJ-WRC2020Biomass$TOC_ADJ.1) #Created new column for microbial biomass carbon
 
 sub.wrc2020 <- cbind(sub.wrc2020,MBC.adj)  #Added the new column to data frame
 
-MBN.adj <- (WRC2020_02012021$TKN_ADJ-WRC2020_02012021$TKN_ADJ.1) #Created new column for microbial biomass nitrogen
+MBN.adj <- (WRC2020Biomass$TKN_ADJ-WRC2020Biomass$TKN_ADJ.1) #Created new column for microbial biomass nitrogen
 
 sub.wrc2020 <- cbind(sub.wrc2020,MBN.adj)    #Added new column to data frame 
 ```
-*CREATED BOXPLOT FOR MBC AND MBN*
+*MICROBIAL BIOMASS CARBON AND MICROBIAL BIOMASS NITROGEN BOXPLOTS*
 ```{r}
+#MBC
 boxplot(sub.wrc2020$MBC.adj~sub.wrc2020$Treatment, ylab="Microbial Biomass C", xlab = "Treatment") #Carbon
-
+#MBN
 boxplot(sub.wrc2020$MBN.adj~sub.wrc2020$Treatment, ylab = "Microbial Biomass N", xlab = "Treatment") #Nitrogen
 
+#MBC PLOT
+ggplot(sub.wrc2020, aes(x=Treatment, y=MBC.adj, color=as.factor(Treatment)))+ geom_boxplot()+
+geom_point(aes(color=factor(Treatment), shape=(Ditch)), size=2, position = position_jitterdodge())+ scale_color_manual(name="Treatment", values=c("gray70", "darkgreen"), labels = c("Mowed/Unfertilized", "Mowed/Fertilized"))+
+xlab("Treatment")+
+ylab("Microbial Biomass Carbon")+
+scale_shape_manual(labels = c("(0_wet)","(1_dry)"), values= c(16,17))+
+theme_bw() + 
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line 
+          =element_line(colour = "black")) + 
+    theme(axis.title=element_text(vjust=1,size=14,face="bold"),
+          axis.text=element_text(size=14), axis.text.x = element_text(vjust=0.65, hjust=0.5, 
+          size=14), panel.border = element_rect(colour = "black",size=1)) + 
+    theme(axis.ticks.length=unit(0.3,"cm"))+ 
+    theme(strip.text.x = element_text(size=14, face="bold"), strip.text.y =   
+          element_text(size=14, face="bold"), strip.background = element_rect(colour="black",
+          fill="white", size=1))
 
-ggplot(data=sub.wrc2020)+
-  geom_boxplot(aes(x=Treatment, y=MBC.adj, color=Ditch,), na.rm = TRUE)+
-  geom_point(aes(x=Treatment, y=MBC.adj, color=Ditch), na.rm = TRUE, position = position_jitterdodge())
+#Both treated and untreated plots have similar microbial biomass carbon. Ditch effect also seems to not play a significant role since both dry and wet plots are similar across both fertilized and unfertilized
 
-#IN THE MF PLOTS, MOST OF THE SAMPLES FROM THE WETTER PLOTS SEEM TO CORRELATE WITH LOWER MICROBIAL BIOMASS CARBON (MAYBE SOME COMPETITION FOR NUTRIENTS BETWEEN FAST GROWERS AND SLOW GROWERS). IN M PLOTS, THE TREND SEEMS SIMILAR. DITCH EFFECT SHOWS A STRONGER INFLUENCE ON MICROBES UTILIZING THE CARBON. TREATMENT SEEMS TO HAVE LESS OF AN EFFECT ON MBC THAN DITCH EFFECT DOES.
-
-ggplot(data=sub.wrc2020)+
-  geom_boxplot(aes(x=Treatment, y=MBN.adj, color=Ditch,), na.rm = TRUE)+
-  geom_point(aes(x=Treatment, y=MBN.adj, color=Ditch), na.rm = TRUE, position = position_jitterdodge())
-
-#THERE DOESNT SEEM TO BE A CLEAR PATTERN OF DITCH EFFECTS OR TREATMENT ON MICROBIAL BIOMASS NITROGEN. 
+#MBN PLOT
+ggplot(sub.wrc2020, aes(x=Treatment, y=MBN.adj, color=as.factor(Treatment)))+ geom_boxplot()+
+geom_point(aes(color=factor(Treatment), shape=(Ditch)), size=2, position = position_jitterdodge())+ scale_color_manual(name="Treatment", values=c("gray70", "darkgreen"), labels = c("Mowed/Unfertilized", "Mowed/Fertilized"))+
+xlab("Treatment")+
+ylab("Microbial Biomass Nitrogen")+
+scale_shape_manual(labels = c("(0_wet)","(1_dry)"), values= c(16,17))+
+theme_bw() + 
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line 
+          =element_line(colour = "black")) + 
+    theme(axis.title=element_text(vjust=1,size=14,face="bold"),
+          axis.text=element_text(size=14), axis.text.x = element_text(vjust=0.65, hjust=0.5, 
+          size=14), panel.border = element_rect(colour = "black",size=1)) + 
+    theme(axis.ticks.length=unit(0.3,"cm"))+ 
+    theme(strip.text.x = element_text(size=14, face="bold"), strip.text.y =   
+          element_text(size=14, face="bold"), strip.background = element_rect(colour="black",
+          fill="white", size=1))
+#Both treated and untreated plots have similar microbial biomass nitrogen. Ditch effect also seems to not play a significant role since both dry and wet plots are similar across both fertilized and unfertilized
 ```
 ```{r}
 sub.wrc2020 %>%
   arrange(desc(Below.Ground.Biomass))
+#On avg, wet fertilized plots have higher belowground biomass than dry and unfertilized
 ```
 *LOAD PACKAGES*
 ```{r}
@@ -132,15 +190,25 @@ require("ade4")
 # Diversity Metrics - Hypothesis Testing (USING ANOVA)
 
 library(lmerTest)
-WRC2020_02012021$Ditch <- as.factor(WRC2020_02012021$Ditch)
-str(WRC2020_02012021)
-AboveGBiomass <- lmer(Aboveground.Dry.weight..g. ~ Treatment*Ditch + (1|Replicate.Block), data = WRC2020_02012021)
-plot(AboveGBiomass)
-
+AboveGBiomass <- lmer(Aboveground.Dry.weight..g. ~ Treatment*Ditch + (1|Replicate.Block), data = WRC2020Biomass) 
+plot(AboveGBiomass) #Residual plot #Random effect is Replicate.Block
 AboveGBiomass
+
 anova(AboveGBiomass, type="II", ddf="Kenward-Roger")
 
-#TREATMENT AND TREATMENT INTERACTING WITH DITCH SHOWS STRONG CORRELATION WITH ABOVE GROUND BIOMASS BASED ON PVALUES (0.001913, 0.001993)
+#TREATMENT AND TREATMENT INTERACTING WITH DITCH SHOWS STRONG CORRELATION WITH ABOVE GROUND BIOMASS BASED ON F VALUE (11.1230, 11.0249) DITCH ALONE (1.8588)
+
+#anova 
+#ABOVEGROUND BIOMASS ~ INTERACTING FACTORS
+AGB <- aov(Aboveground.Dry.weight..g. ~ Treatment*Ditch, data = WRC2020Biomass)
+anova(AGB)
+
+#P-values (Treatment: 0.004017), (Ditch: 0.055337), (Treatment*Ditch: 0.004167)
+
+#T-test(compare the means of 2 groups)
+t.test(Aboveground.Dry.weight..g. ~ Treatment, data = WRC2020Biomass, var.equal = TRUE)
+#M and MF are significantly different in Aboveground Biomass
+
 ```
 
 ```{r}
@@ -150,9 +218,12 @@ ditch.labs <- c("wet_0ditch", "dry_1ditch") #for facet labels
 names(ditch.labs) <- c("0", "1")
 
 # Graphing Shannon Diversity
-p <- ggplot(WRC2020_02012021, aes(x=Treatment, y=Aboveground.Dry.weight..g., color=as.factor(Treatment)))+ geom_boxplot() +
-      geom_point(aes(color=factor(Treatment)), size=2, position = position_jitterdodge()) + scale_color_manual(name="Treatment", values=c("gray70", "darkgreen"), labels = c("mowed", "mowed/fertilized")) 
-p1=p+geom_smooth(method="lm")+facet_wrap(~Ditch)+facet_grid(. ~ Ditch,labeller = labeller(Ditch=ditch.labs))
+ShannonAGB <- ggplot(WRC2020Biomass, aes(x=Treatment, y=Aboveground.Dry.weight..g., color=as.factor(Treatment)))+ geom_boxplot() +
+      geom_point(aes(color=factor(Treatment)), size=2, position = position_jitterdodge()) + scale_color_manual(name="Treatment", values=c("gray70", "darkgreen"), labels = c("Mowed/Unfertilized", "Mowed/Fertilized")) 
+p1=ShannonAGB+geom_smooth(method="lm")+facet_wrap(~Ditch)+facet_grid(. ~ Ditch,labeller = labeller(Ditch=ditch.labs))
+plot(ShannonAGB)
+plot(p1)
+
 
 Aboveground.plot <-p1 + theme_bw() + 
     theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line 
@@ -164,24 +235,34 @@ Aboveground.plot <-p1 + theme_bw() +
     theme(strip.text.x = element_text(size=14, face="bold"), strip.text.y =   
           element_text(size=14, face="bold"), strip.background = element_rect(colour="black",
           fill="white", size=1)) +
-    scale_x_discrete(breaks=c("M", "MF"), labels=c("mowed", "mowed/fertilized"))
+    scale_x_discrete(breaks=c("M", "MF"), labels=c("M", "M/F"))
 Aboveground.plot
 
-#DITCH EFFECT HAS A STRONGER EFFECT ON ABOVEGROUND BIOMASS (GRAMS) THAN TREATMENT DOES. IN THE DRIER PLOTS "M" AND "MF" PLOTS HAVE VERY SIMILAR AVERAGES COMPARED TO WETTER PLOTS WHERE "MF" PLOTS HAVE MUCH MORE ABOVEGROUND BIOMASS. 
+#DITCH EFFECT HAS A STRONGER EFFECT ON ABOVEGROUND BIOMASS(g) THAN TREATMENT DOES. IN THE DRIER PLOTS "M" AND "MF" PLOTS HAVE VERY SIMILAR AVERAGES COMPARED TO WETTER PLOTS WHERE "MF" PLOTS HAVE MUCH MORE ABOVEGROUND BIOMASS. THIS IS POSSIBLY DUE TO STRESSFUL DRIER CONDITIONS AND NUTRIENTS NOT BEING ABLE TO BE RETAINED
 
 ```
 ```{r}
 #ANOVA FOR BELOWGROUND BIOMASS 
-
-WRC2020_02012021$Ditch <- as.factor(WRC2020_02012021$Ditch)
-str(WRC2020_02012021)
-BelowGBiomass <- lmer(Below.Ground.Biomass ~ Treatment*Ditch + (1|Replicate.Block), data = WRC2020_02012021)
-plot(BelowGBiomass)
+WRC2020Biomass$Ditch <- as.factor(WRC2020Biomass$Ditch)
+str(WRC2020Biomass)
+BelowGBiomass <- lmer(Below.Ground.Biomass ~ Treatment*Ditch + (1|Replicate.Block), data = WRC2020Biomass)
+plot(BelowGBiomass) #Very nice residual plot that shows our predicted linear model matches the data (no patterns or curves)
 
 BelowGBiomass
 anova(BelowGBiomass, type="II", ddf="Kenward-Roger")
 
-#TREATMENT AND TREATMENT INTERACTING WITH DITCH DOES NOT SHOW SIGNIFICANT CORRELATIONS TO BELOW GROUND BIOMASS. 
+#DITCH EFFECT (F-VALUE: 3.9444) HAD A STRONGER INFLUENCE ON BELOWGROUND BIOMASS THAN TREATMENT (F-VALUE: 1.9734) OR TREATMENT INTERACTING WITH DITCH (F-VALUE: 1.8376)
+
+#anova 
+#BELOWGROUND BIOMASS ~ INTERACTING FACTORS
+BGB <- aov(Below.Ground.Biomass ~ Treatment*Ditch, data = WRC2020Biomass)
+anova(BGB)
+
+#P-values (Treatment: 0.16711), (Ditch: 0.05328), (Treatment*Ditch: 0.18215)
+
+#T-test(compare the means of 2 groups)
+t.test(Below.Ground.Biomass ~ Treatment, data = WRC2020Biomass, var.equal = TRUE)
+#M and MF are not that significantly different in Belowground Biomass
 ```
 ```{r}
 #BELOWGROUND BIOMASS PLOTS
@@ -190,10 +271,11 @@ ditch.labs <- c("wet_0ditch", "dry_1ditch") #for facet labels
 names(ditch.labs) <- c("0", "1")
 
 # Graphing Shannon Diversity
-p <- ggplot(WRC2020_02012021, aes(x=Treatment, y=Below.Ground.Biomass, color=as.factor(Treatment)))+ geom_boxplot() +
-      geom_point(aes(color=factor(Treatment)), size=2, position = position_jitterdodge()) + scale_color_manual(name="Treatment", values=c("gray70", "darkgreen"), labels = c("mowed", "mowed/fertilized")) 
-p1=p+geom_smooth(method="lm")+facet_wrap(~Ditch)+facet_grid(. ~ Ditch,labeller = labeller(Ditch=ditch.labs))
+ShannonBGB <- ggplot(WRC2020Biomass, aes(x=Treatment, y=Below.Ground.Biomass, color=as.factor(Treatment)))+ geom_boxplot() +
+      geom_point(aes(color=factor(Treatment)), size=2, position = position_jitterdodge()) + scale_color_manual(name="Treatment", values=c("gray70", "darkgreen"), labels = c("Mowed/Unfertilized", "Mowed/Fertilized")) 
+p1=ShannonBGB+geom_smooth(method="lm")+facet_wrap(~Ditch)+facet_grid(. ~ Ditch,labeller = labeller(Ditch=ditch.labs))
 
+#plot
 Belowground.plot <-p1 + theme_bw() + 
     theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line 
           =element_line(colour = "black")) + 
@@ -204,35 +286,32 @@ Belowground.plot <-p1 + theme_bw() +
     theme(strip.text.x = element_text(size=14, face="bold"), strip.text.y =   
           element_text(size=14, face="bold"), strip.background = element_rect(colour="black",
           fill="white", size=1)) +
-    scale_x_discrete(breaks=c("M", "MF"), labels=c("mowed", "mowed/fertilized"))
+    scale_x_discrete(breaks=c("M", "MF"), labels=c("M", "M/F"))
 Belowground.plot
 
-#DITCH EFFECT DOESNT HAVE THAT STRONG OF AN EFFECT ON BELOWGROUND BIOMASS (GRAMS) LIKE TREATMENT DOES. IN BOTH WET AND DRY DITCH "MF" PLOTS HAD A HIGHER BIOMASS THAN "M". THE DISTINCTION BETWEEN TREATMENTS IS MUCH MORE CLEAR BETWEEN WETTER PLOTS THAN DRIER ONES. BIOMASS IS ALSO MUCH MORE VARIABLE IN "MF" PLOTS IN THE WETTER PLOTS THAN DRIER ONES.
+#DITCH EFFECT DOESNT HAVE THAT STRONG OF AN EFFECT ON BELOWGROUND BIOMASS (GRAMS) IN UNFERTILIZED PLOTS. ALTHOUGH FERTILIZED PLOTS HAD HIGHER BELOWGROUND BIOMASS REGARDLESS OF DITCH PROXIMITY, IT WAS MOST DISTINCT IN WETTER TREATMENT PLOTS THAN DRIER PLOTS. IN BOTH WET AND DRY PLOTS FERTILIZED PLOTS HAD HIGHER BELOWGROUND BIOMASS THAN UNFERTILIZED.BIOMASS IS ALSO MUCH MORE VARIABLE IN "MF" PLOTS IN THE WETTER PLOTS THAN DRIER ONES.
 
 ```
 ```{r}
 #ANOVA FOR MICROBIAL BIOMASS CARBON 
-
-sub.wrc2020$Ditch <- as.factor(sub.wrc2020$Ditch)
-str(sub.wrc2020)
-MicrobialBiomassC <- lmer(MBC.adj ~ Treatment*Ditch + (1|Replicate.Block), data = sub.wrc2020)
-plot(MicrobialBiomassC)
+WRC2020Biomass$Ditch <- as.factor(WRC2020Biomass$Ditch)
+str(WRC2020Biomass)
+MicrobialBiomassC <- lmer(MBC.adj ~ Treatment*Ditch + (1|Replicate.Block), data = WRC2020Biomass)
+plot(MicrobialBiomassC) #No clear pattern in the residual plot
 
 MicrobialBiomassC
 anova(MicrobialBiomassC, type="II", ddf="Kenward-Roger")
 
-#ALTHOUGH TREATMENT IS SLIGHTLY SIGNIFICANT (PVALUE: 0.0669), IT DOES SHOW A STRONGER CORRELATION TO MICROBIAL BIOMASS C THAN DITCH EFFFECT OR THE INTERACTION BETWEEN THE TWO
-```
-```{r}
-#MICROBIAL BIOMASS CARBON
+#TREATMENT (F-VALUE: 3.5586) HAD A STRONGER INFLUENCE ON MICROBIAL BIOMASS CARBON THAN PROXIMITY TO DITCH (F-VALUE: 0.3350) OR TREATMENT INTERACTING WITH THE DITCH (F-VALUE: 0.2297).THIS MAKES SENSE SINCE BECAUSE...
 
+#MICROBIAL BIOMASS CARBON
 ditch.labs <- c("wet_0ditch", "dry_1ditch") #for facet labels
 names(ditch.labs) <- c("0", "1")
 
 # Graphing Shannon Diversity
-p <- ggplot(sub.wrc2020, aes(x=Treatment, y=MBC.adj, color=as.factor(Treatment)))+ geom_boxplot() +
-      geom_point(aes(color=factor(Treatment)), size=2, position = position_jitterdodge()) + scale_color_manual(name="Treatment", values=c("gray70", "darkgreen"), labels = c("mowed", "mowed/fertilized")) 
-p1=p+geom_smooth(method="lm")+facet_wrap(~Ditch)+facet_grid(. ~ Ditch,labeller = labeller(Ditch=ditch.labs))
+ShannonMBC <- ggplot(sub.wrc2020, aes(x=Treatment, y=MBC.adj, color=as.factor(Treatment)))+ geom_boxplot() +
+      geom_point(aes(color=factor(Treatment)), size=2, position = position_jitterdodge()) + scale_color_manual(name="Treatment", values=c("gray70", "darkgreen"), labels = c("Mowed", "Mowed/Fertilized")) 
+p1=ShannonMBC+geom_smooth(method="lm")+facet_wrap(~Ditch)+facet_grid(. ~ Ditch,labeller = labeller(Ditch=ditch.labs))
 
 MicrobialBiomassC <-p1 + theme_bw() + 
     theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line 
@@ -244,35 +323,42 @@ MicrobialBiomassC <-p1 + theme_bw() +
     theme(strip.text.x = element_text(size=14, face="bold"), strip.text.y =   
           element_text(size=14, face="bold"), strip.background = element_rect(colour="black",
           fill="white", size=1)) +
-    scale_x_discrete(breaks=c("M", "MF"), labels=c("mowed", "mowed/fertilized"))
+    scale_x_discrete(breaks=c("M", "MF"), labels=c("M", "M/F"))
 MicrobialBiomassC
 
-#IN BOTH WET AND DRY PLOTS "M" PLOTS SHOWED A HIGHER MICROBIAL BIOMASS CARBON THAN "MF". FERTILIZATION SEEMS TO LOWER MICROBIAL BIOMASS C. 
+#IN BOTH WET AND DRY PLOTS "M" PLOTS SHOWED A HIGHER MICROBIAL BIOMASS CARBON THAN "MF". FERTILIZATION SEEMS TO LOWER MICROBIAL BIOMASS C BUT ON AVG MBC IS SIMILIAR ACROSS TREATMENTS.
+
+#T-test(compare the means of 2 groups)
+t.test(MBC.adj ~ Treatment, data = sub.wrc2020, var.equal = TRUE)
+#M and MF are not that significantly different in Microbial Biomass Carbon
 ```
 ```{r}
 #ANOVA FOR MICROBIAL BIOMASS NITROGEN 
 
-sub.wrc2020$Ditch <- as.factor(sub.wrc2020$Ditch)
-str(sub.wrc2020)
-MicrobialBiomassN <- lmer(MBN.adj ~ Treatment*Ditch + (1|Replicate.Block), data = sub.wrc2020)
-plot(MicrobialBiomassN)
+WRC2020Biomass$Ditch <- as.factor(WRC2020Biomass$Ditch)
+str(WRC2020Biomass)
+MicrobialBiomassN <- lmer(MBN.adj ~ Treatment*Ditch + (1|Replicate.Block), data = WRC2020Biomass)
+plot(MicrobialBiomassN) #No pattern on residual plot. Good linear relationship 
 
 MicrobialBiomassN
 anova(MicrobialBiomassN, type="II", ddf="Kenward-Roger")
 
-#THERE SEEMS TO BE NO STRONG OR SIGNIFICATNT CORRELATIONS BETWEEN TREATMENT OR DITCH EFFECT ON MICROBIAL BIOMASS NITROGEN.
-```
-```{r}
+#DITCH EFFECT (F-VALUE: 0.0056) OR TREATMENT INTERACTING WITH DITCH (F-VALUE: 0.0128) DOES NOT SEEM TO INFLUENCE MICROBIAL BIOMASS NITROGEN. TREATMENT (F-VALUE: 0.8538) IS THE MAIN DRIVER OF MICROBIAL BIOMASS NITROGEN.
+
+#T-test(compare the means of 2 groups)
+t.test(MBN.adj ~ Treatment, data = sub.wrc2020, var.equal = TRUE)
+#M and MF are not that significantly different in Microbial Biomass Nitrogen
+
+
 #MICROBIAL BIOMASS NITROGEN
 
 ditch.labs <- c("wet_0ditch", "dry_1ditch") #for facet labels
 names(ditch.labs) <- c("0", "1")
 
 # Graphing Shannon Diversity
-p <- ggplot(sub.wrc2020, aes(x=Treatment, y=MBN.adj, color=as.factor(Treatment)))+ geom_boxplot() +
-      geom_point(aes(color=factor(Treatment)), size=2, position = position_jitterdodge()) + scale_color_manual(name="Treatment", values=c("gray70", "darkgreen"), labels = c("mowed", "mowed/fertilized")) 
-p1=p+geom_smooth(method="lm")+facet_wrap(~Ditch)+facet_grid(. ~ Ditch,labeller = labeller(Ditch=ditch.labs))
-
+ShannonMBN <- ggplot(sub.wrc2020, aes(x=Treatment, y=MBC.adj, color=as.factor(Treatment)))+ geom_boxplot() +
+      geom_point(aes(color=factor(Treatment)), size=2, position = position_jitterdodge()) + scale_color_manual(name="Treatment", values=c("gray70", "darkgreen"), labels = c("Mowed", "Mowed/Fertilized")) 
+p1=ShannonMBN+geom_smooth(method="lm")+facet_wrap(~Ditch)+facet_grid(. ~ Ditch,labeller = labeller(Ditch=ditch.labs))
 MicrobialBiomassN <-p1 + theme_bw() + 
     theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.line 
           =element_line(colour = "black")) + 
@@ -283,10 +369,10 @@ MicrobialBiomassN <-p1 + theme_bw() +
     theme(strip.text.x = element_text(size=14, face="bold"), strip.text.y =   
           element_text(size=14, face="bold"), strip.background = element_rect(colour="black",
           fill="white", size=1)) +
-    scale_x_discrete(breaks=c("M", "MF"), labels=c("mowed", "mowed/fertilized"))
+    scale_x_discrete(breaks=c("M", "MF"), labels=c("M", "M/F"))
 MicrobialBiomassN
 
-#IN BOTH WET AND DRY PLOTS "M" AND "MF" PLOTS SHOWED VERY SIMILAR AMOUNTS OF MICROBIAL BIOMASS NITROGEN. TREATMENT NOR DITCH EFFECT IMPACTS THIS OUTCOME. 
+#DITCH EFFECT SEEMS TO NOT BE AS SIGNIFICANT OF A DRIVER FOR MICROBIAL BIOMASS NITROGEN. TREATMENT ON AVG LOWERS MBN AND THIS IS MORE DISTINCT IN WETTER PLOTS.
 ```
 
 *HOW DOES TREAMENT AND DITCH EFFECT INFLUENCE MBC.adj USING ANOVA AND TUKEY POST HOC CALCULATIONS*
@@ -401,14 +487,8 @@ ggplot(sub.wrc2020) +
     se = FALSE
   )
 
-
 ```
 
-```{r}
-ggplot(data = sub.wrc2020) + 
-  geom_point(mapping = aes(x = Below.Ground.Biomass, y = Aboveground.Dry.weight..g.)) + 
-  facet_wrap(~ Treatment, nrow = 2)
-```
 
 
 
